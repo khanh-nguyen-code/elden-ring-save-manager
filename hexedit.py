@@ -1,6 +1,7 @@
 import binascii, re, hashlib, random, base64, stat_progression, itemdata, os
 
 
+
 def l_endian(val):
     """Takes bytes and returns little endian int32/64"""
     l_hex = bytearray(val)
@@ -10,18 +11,21 @@ def l_endian(val):
 
 
 def recalc_checksum(file):
+    """
+        There are checksums for each character block, and an general overall checksum.
+        This function is used after any savedata manipulation has been performed.
+    """
     with open(file, "rb") as fh:
         dat = fh.read()
-        slot_ls = []
+        slot_ls = []    # Will contain [data-segment,corresponding-checkum]
         slot_len = 2621439
         cs_len = 15
-        s_ind = 0x00000310
-        c_ind = 0x00000300
+        s_ind = 0x00000310  # Start of slot index
+        c_ind = 0x00000300  # Start of checksum index
 
         # Build nested list containing data and checksum related to each slot
         for i in range(10):
-            # [ dat[0x00000310:0x0028030F +1], dat[ 0x00000300:0x0000030F + 1] ]
-            d = dat[s_ind : s_ind + slot_len + 1]
+            d = dat[s_ind : s_ind + slot_len + 1]   # EXAMPLE: [ dat[0x00000310:0x0028030F +1], dat[ 0x00000300:0x0000030F + 1] ]
             c = dat[c_ind : c_ind + cs_len + 1]
             slot_ls.append([d, c])
             s_ind += 2621456
@@ -39,6 +43,7 @@ def recalc_checksum(file):
         cs_len = 15
         s_ind = 0x00000310
         c_ind = 0x00000300
+
         # Insert all checksums into data
         for i in slot_ls:
             dat = dat[:s_ind] + i[0] + dat[s_ind + slot_len + 1 :]
@@ -59,10 +64,26 @@ def recalc_checksum(file):
 
 
 def change_name(file, nw_nm, dest_slot):
-    """Builds list of each character name from static name locations in header, then passes specified char name in bytes into replacer function."""
+        """Builds list of each character name from static name locations in header, then passes specified char name in bytes into replacer function.
+            Arguments:
+                file: string containing path to source file
+                nw_nm: string new name to overwrite old name
+                dest_slot: integer of which character to copy [1-10] (old name to be replaced will be derived from this value)
+            Returns:
+                replacer() << Returns "error" if too many occurences of the old name were found
+
+        """
 
     def replacer(file, old_name, name):
-        """Scans for all occurences of old_name and replaces it with name."""
+        """Scans for all occurences of old_name and replaces it with name.
+           Arguments:
+                file: string containing path to save file
+                old_name: string of name to replace
+                name: string of new name to be written
+            Returns:
+                string "error" if amount of occurences is too many. If you pass in "M", you will overwrite way more than just names
+
+        """
         with open(file, "rb") as fh:
             dat1 = fh.read()
             id_loc = []
@@ -116,6 +137,12 @@ def change_name(file, nw_nm, dest_slot):
 
 
 def replace_id(file, newid):
+    """Replaces SteamID with newid.
+        Arguments:
+            file: string containing path to file
+            newid: integer of 17 digit SteamID
+        Returns: Nothing
+    """
     id_loc = []
     index = 0
 
@@ -148,7 +175,13 @@ def replace_id(file, newid):
 
 
 def copy_save(src_file, dest_file, src_char, dest_char):
-    """Copy characters between save files"""
+    """Copy characters between save files.
+       Arguments:
+        src_file: string containing path to source file
+        dest_file: string containing path to destination file
+        src_char: integer of which character to copy [1-10]
+        dest_char: integer of which character to overwrite [1-10]
+    """
     slot_len = 2621456
     lvls = get_levels(src_file)
     lvl = lvls[src_char - 1]
@@ -184,6 +217,7 @@ def copy_save(src_file, dest_file, src_char, dest_char):
 
 
 def get_id(file):
+    """Get the current SteamID of provided save file"""
     with open(file, "rb") as f:
         dat = f.read()
         f.seek(26215348)  # start address of steamID
@@ -192,23 +226,19 @@ def get_id(file):
 
 
 def get_names(file):
+    """Gets list of names for all character in save file
+        Returns:
+            False if FileNotFound
+            List of names otherwise
+
+    """
     try:
         with open(file, "rb") as fh:
             dat1 = fh.read()
 
     except FileNotFoundError as e:
         return False
-#    except FileNotFoundError as e:
-#        d = file.split("/")[:4]
-#        d = "/".join(d)
 
-#        dir_id = re.findall(r'\d{17}',str(os.listdir(d)))
-#        if len(dir_id) != 1:
-#            return False
-
-#        new_path = f"{d}/{dir_id[0]}/ER0000.sl2"
-#        with open(new_path, "rb") as fh:
-#            dat1 = fh.read()
 
     name1 = dat1[0x1901d0e:0x1901d0e + 32].decode('utf-16')
     name2 = dat1[0x1901f5a:0x1901f5a + 32].decode('utf-16')
@@ -540,6 +570,8 @@ def additem(file, slot, itemids, quantity):
         for ind, i in enumerate(cs):
             if ind < 30000:
                 continue
+            if ind > 95000:
+                continue
             if (
                 l_endian(cs[ind : ind + 1]) == cur[0]
                 and l_endian(cs[ind + 1 : ind + 2]) == cur[1]
@@ -557,7 +589,7 @@ def additem(file, slot, itemids, quantity):
                 index.append(ind + 4)
 
 
-        if len(index) < 1 or len(index) > 1:
+        if len(index) < 1:
             return None
 
         else:
